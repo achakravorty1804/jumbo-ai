@@ -26,6 +26,8 @@ RULES = [
     Rule("stock tip", title=r"target price|stop[- ]loss|stocks? to buy"),
     Rule("upper-circuit chatter", title=r"upper circuit"),
     Rule("daily RBI data table", source="RBI Press Releases", title=r"^Money Market Operations as on"),
+    Rule("routine RBI auction/liquidity notice", source="RBI Press Releases",
+         title=r"auction|open market operation|\bOMO\b|\bVRRR\b|treasury bills?"),
     Rule("daily price listing", title=r"^gold rate today"),
     Rule("event ticket promo", source="TechCrunch", title=r"\d+ days? left|save up to"),
 ]

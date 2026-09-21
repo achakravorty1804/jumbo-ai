@@ -1,15 +1,19 @@
 """Layer 2: AI triage. Sends articles to the LLM in small batches and gets back
 a category and a 1-5 importance score for each one."""
+import dataclasses
 import json
 import logging
 import sys
 from dataclasses import dataclass
-from pathlib import Path   
+from datetime import datetime
+from pathlib import Path
 from urllib.parse import urlparse
-from agent import llm
-from agent.prefilter import prefilter
-from news.rss import fetch_all
 
+from agent import llm
+from agent.merge import merge_similar, select_top_stories
+from agent.prefilter import prefilter
+from news.parser import Article
+from news.rss import fetch_all
 log = logging.getLogger(__name__)
 
 CATEGORIES = {
@@ -19,7 +23,7 @@ CATEGORIES = {
 PROMPT_FILE = Path(__file__).resolve().parent.parent / "prompts" / "classification.txt"
 SNIPPET_CHARS = 200
 BATCH_SIZE = 20
-
+CACHE_FILE = Path(__file__).resolve().parent.parent / "scratch" / "classified_latest.json"
 
 @dataclass
 class Classified:
@@ -93,6 +97,26 @@ def classify_all(articles, batch_size=BATCH_SIZE):
         log.info("Rated %d of %d", min(start + batch_size, len(articles)), len(articles))
     return results
 
+def save_results(results, path=CACHE_FILE):
+    """Saves ratings to a local file (scratch/ is gitignored) so later steps can be tested for free."""
+    path.parent.mkdir(exist_ok=True)
+    rows = []
+    for c in results:
+        article = dataclasses.asdict(c.article)
+        article["published"] = c.article.published.isoformat()
+        rows.append({"article": article, "category": c.category, "score": c.score, "reason": c.reason})
+    path.write_text(json.dumps(rows, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def load_results(path=CACHE_FILE):
+    rows = json.loads(path.read_text(encoding="utf-8"))
+    results = []
+    for row in rows:
+        article = dict(row["article"])
+        article["published"] = datetime.fromisoformat(article["published"])
+        results.append(Classified(Article(**article), row["category"], row["score"], row["reason"]))
+    return results
+
 
 def select_top(classified, min_score=4, cap=15):
     picks = [c for c in classified if c.score >= min_score]
@@ -114,6 +138,15 @@ if __name__ == "__main__":
     results = classify_all(kept)
     for c in sorted(results, key=lambda c: -c.score):
         print(f"{c.score} | {c.category:<17} | {c.article.source_name:<14} | {c.article.title[:85]} | {c.reason}")
-    top = select_top(results)
-    print(f"\nWould send {len(top)} stories on to summaries (score 4+, cap 15)")
-    print(f"LLM usage: {llm.usage_totals}")
+    stories = merge_similar(results)
+    strong = sum(1 for c in results if c.score >= 4)
+    distinct = sum(1 for s in stories if s.score >= 4)
+    print(f"\nArticles scored 4+: {strong}")
+    print(f"Distinct stories scoring 4+ after merging same-headline copies: {distinct}")
+    print("\nTop stories for the briefing (cap 15):")
+    for s in select_top_stories(stories):
+        print(f"  {s.score} | {' + '.join(s.publishers):<34} | {s.lead.article.title[:80]}")
+    print(f"\nLLM usage: {llm.usage_totals}")
+    if mode == "all":  # only cache a full run, so a small test can't overwrite it
+        save_results(results)
+        print(f"Saved ratings to {CACHE_FILE}")
