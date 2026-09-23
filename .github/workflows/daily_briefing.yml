@@ -1,0 +1,44 @@
+name: Jumbo Daily Briefing
+
+on:
+  schedule:
+    - cron: "25 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  daily-briefing:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Jumbo
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: https://api.groq.com/openai/v1
+          LLM_MODEL: openai/gpt-oss-120b
+          RESPECT_PAYWALL_FLAG: ${{ secrets.RESPECT_PAYWALL_FLAG }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: python run_daily.py
+
+      - name: Commit updated database
+        run: |
+          git config user.name "Jumbo AI"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/jumbo.db
+          git diff --cached --quiet || git commit -m "Update Jumbo news memory"
+          git push
