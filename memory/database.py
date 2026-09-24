@@ -33,17 +33,16 @@ CREATE TABLE IF NOT EXISTS stories (
     entities TEXT NOT NULL,                   -- JSON list
     created_at TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS articles (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    story_id INTEGER NOT NULL REFERENCES stories(id),
-    url TEXT NOT NULL UNIQUE,
-    original_title TEXT NOT NULL,
-    publisher TEXT NOT NULL,
-    published_at TEXT NOT NULL,               -- ISO 8601 with +05:30
-    is_lead INTEGER NOT NULL DEFAULT 0
-);
 CREATE INDEX IF NOT EXISTS idx_stories_run ON stories(run_id);
 CREATE INDEX IF NOT EXISTS idx_articles_story ON articles(story_id);
+CREATE TABLE IF NOT EXISTS chat_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id TEXT NOT NULL,   -- groups messages into one chat session
+    role TEXT NOT NULL,              -- 'user' or 'assistant'
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_log_conv ON chat_log(conversation_id);
 """
 
 
@@ -57,6 +56,18 @@ def connect(path=DB_PATH):
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+
+    # Old day-grouped chat_log schema from early testing; drop it before running
+    # the current SCHEMA, since it lacks the conversation_id column the new
+    # schema's index requires. Only ever contained test data, safe to replace.
+    existing = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='chat_log'"
+    ).fetchone()
+    if existing:
+        chat_cols = {row["name"] for row in conn.execute("PRAGMA table_info(chat_log)")}
+        if "conversation_id" not in chat_cols:
+            conn.execute("DROP TABLE chat_log")
+
     conn.executescript(SCHEMA)
     _migrate(conn)
     return conn
@@ -67,6 +78,7 @@ def _migrate(conn):
         conn.execute("ALTER TABLE stories ADD COLUMN embedding BLOB")
     if "duplicate_of" not in cols:
         conn.execute("ALTER TABLE stories ADD COLUMN duplicate_of INTEGER REFERENCES stories(id)")
+
     conn.commit()
 
 def get_or_create_run(conn, run_date):
@@ -109,7 +121,7 @@ def add_story(conn, run_id, category, score, summary, articles, embedding=None, 
                 _now(), embedding, duplicate_of,
             ),
         )
-        
+
         story_id = cur.lastrowid
         for i, a in enumerate(articles):
             conn.execute(
@@ -139,3 +151,32 @@ def list_stories(conn, run_date):
         ]
         stories.append(story)
     return stories
+
+def add_chat_message(conn, conversation_id, role, content):
+    with conn:
+        conn.execute(
+            "INSERT INTO chat_log (conversation_id, role, content, created_at) VALUES (?,?,?,?)",
+            (conversation_id, role, content, _now()),
+        )
+
+
+def get_chat_history(conn, conversation_id):
+    rows = conn.execute(
+        "SELECT role, content FROM chat_log WHERE conversation_id = ? ORDER BY id", (conversation_id,)
+    ).fetchall()
+    return [(row["role"], row["content"]) for row in rows]
+
+
+def list_conversations(conn):
+    """One row per conversation: its id, a title (first user message), and last activity time."""
+    rows = conn.execute(
+        """
+        SELECT conversation_id,
+               MIN(CASE WHEN role = 'user' THEN content END) AS title,
+               MAX(created_at) AS last_active
+        FROM chat_log
+        GROUP BY conversation_id
+        ORDER BY last_active DESC
+        """
+    ).fetchall()
+    return [dict(row) for row in rows]
