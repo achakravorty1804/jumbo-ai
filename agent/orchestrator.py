@@ -12,6 +12,7 @@ from agent.merge import merge_similar, select_top_stories
 from agent.prefilter import prefilter
 from agent.summarizer import PROMPT_FILE, summarize_story
 from memory import database as db
+from memory import dedup
 from news.article_text import fetch_article_text
 from news.parser import IST
 
@@ -48,9 +49,14 @@ def summarise_and_save(stories, conn, run_id):
             failed += 1
             log.warning("Could not summarise: %s", lead.title)
             continue
-        db.add_story(conn, run_id, story.lead.category, story.score, summary, articles)
+        embedding = dedup.embed(summary.headline, summary.summary)
+        match_id, similarity = dedup.find_best_match(conn, embedding, exclude_run_id=run_id)
+        duplicate_of = match_id if similarity >= dedup.SIMILARITY_THRESHOLD else None
+        db.add_story(conn, run_id, story.lead.category, story.score, summary, articles,
+                      embedding=embedding, duplicate_of=duplicate_of)
         saved += 1
-        log.info("Saved %d of %d (%s, page: %s)", n, len(stories), summary.source_mode, status)
+        dup_note = f" [duplicate of story {duplicate_of}, sim={similarity:.2f}]" if duplicate_of else ""
+        log.info("Saved %d of %d (%s, page: %s)%s", n, len(stories), summary.source_mode, status, dup_note)
     return saved, skipped, failed
 
 

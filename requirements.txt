@@ -3,3 +3,4 @@
    python-dotenv
    trafilatura
    streamlit
+   sentence-transformers

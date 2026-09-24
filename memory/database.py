@@ -58,8 +58,16 @@ def connect(path=DB_PATH):
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
 
+def _migrate(conn):
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(stories)")}
+    if "embedding" not in cols:
+        conn.execute("ALTER TABLE stories ADD COLUMN embedding BLOB")
+    if "duplicate_of" not in cols:
+        conn.execute("ALTER TABLE stories ADD COLUMN duplicate_of INTEGER REFERENCES stories(id)")
+    conn.commit()
 
 def get_or_create_run(conn, run_date):
     row = conn.execute("SELECT id FROM runs WHERE run_date = ?", (run_date,)).fetchone()
@@ -86,20 +94,22 @@ def add_tokens(conn, run_id, prompt_tokens, completion_tokens):
         )
 
 
-def add_story(conn, run_id, category, score, summary, articles):
+def add_story(conn, run_id, category, score, summary, articles, embedding=None, duplicate_of=None):
     """Saves one story and its article(s) in a single transaction. The first article is the lead."""
     with conn:
         cur = conn.execute(
             "INSERT INTO stories (run_id, category, score, headline, summary, why_it_matters, "
-            "source_mode, unverified_numbers, entities, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "source_mode, unverified_numbers, entities, created_at, embedding, duplicate_of) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 run_id, category, score, summary.headline, summary.summary, summary.why_it_matters,
                 summary.source_mode,
                 json.dumps(summary.unverified_numbers) if summary.unverified_numbers else None,
                 json.dumps(summary.entities, ensure_ascii=False),
-                _now(),
+                _now(), embedding, duplicate_of,
             ),
         )
+        
         story_id = cur.lastrowid
         for i, a in enumerate(articles):
             conn.execute(

@@ -31,6 +31,8 @@ def load_latest_briefing():
 
 def render_story(story):
     flags = []
+    if story.get("duplicate_of"):
+        flags.append("🔄 update to earlier story")
     if story["source_mode"] != "article_text":
         flags.append("📄 snippet only")
     if story["unverified_numbers"]:
