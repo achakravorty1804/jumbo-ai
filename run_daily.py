@@ -64,7 +64,7 @@ def build_briefing():
 def send_daily_email(story_count: int):
     """Send the short Jumbo daily email."""
 
-    dashboard_url = "https://example.com"
+    dashboard_url = "https://jumbo-ai-dpdqoyag5ko7krhwt7vrml.streamlit.app/"
 
     subject = "🐘 Jumbo — Your daily intelligence briefing is ready"
 
