@@ -33,6 +33,15 @@ CREATE TABLE IF NOT EXISTS stories (
     entities TEXT NOT NULL,                   -- JSON list
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS articles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    story_id INTEGER NOT NULL REFERENCES stories(id),
+    url TEXT NOT NULL UNIQUE,
+    original_title TEXT NOT NULL,
+    publisher TEXT NOT NULL,
+    published_at TEXT NOT NULL,
+    is_lead INTEGER NOT NULL DEFAULT 0
+);
 CREATE INDEX IF NOT EXISTS idx_stories_run ON stories(run_id);
 CREATE INDEX IF NOT EXISTS idx_articles_story ON articles(story_id);
 CREATE TABLE IF NOT EXISTS chat_log (
@@ -78,6 +87,8 @@ def _migrate(conn):
         conn.execute("ALTER TABLE stories ADD COLUMN embedding BLOB")
     if "duplicate_of" not in cols:
         conn.execute("ALTER TABLE stories ADD COLUMN duplicate_of INTEGER REFERENCES stories(id)")
+    if "source_count" not in cols:
+        conn.execute("ALTER TABLE stories ADD COLUMN source_count INTEGER NOT NULL DEFAULT 1")
 
     conn.commit()
 
@@ -106,19 +117,28 @@ def add_tokens(conn, run_id, prompt_tokens, completion_tokens):
         )
 
 
-def add_story(conn, run_id, category, score, summary, articles, embedding=None, duplicate_of=None):
+def increment_source_count(conn, story_id, by=1):
+    """Called when a later report is found to be an update of an earlier story (cross-day dedup)."""
+    with conn:
+        conn.execute(
+            "UPDATE stories SET source_count = source_count + ? WHERE id = ?",
+            (by, story_id),
+        )
+
+
+def add_story(conn, run_id, category, score, summary, articles, embedding=None, duplicate_of=None, source_count=1):
     """Saves one story and its article(s) in a single transaction. The first article is the lead."""
     with conn:
         cur = conn.execute(
             "INSERT INTO stories (run_id, category, score, headline, summary, why_it_matters, "
-            "source_mode, unverified_numbers, entities, created_at, embedding, duplicate_of) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "source_mode, unverified_numbers, entities, created_at, embedding, duplicate_of, source_count) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 run_id, category, score, summary.headline, summary.summary, summary.why_it_matters,
                 summary.source_mode,
                 json.dumps(summary.unverified_numbers) if summary.unverified_numbers else None,
                 json.dumps(summary.entities, ensure_ascii=False),
-                _now(), embedding, duplicate_of,
+                _now(), embedding, duplicate_of, source_count,
             ),
         )
 

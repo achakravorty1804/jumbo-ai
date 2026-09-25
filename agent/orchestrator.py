@@ -53,7 +53,10 @@ def summarise_and_save(stories, conn, run_id):
         match_id, similarity = dedup.find_best_match(conn, embedding, exclude_run_id=run_id)
         duplicate_of = match_id if similarity >= dedup.SIMILARITY_THRESHOLD else None
         db.add_story(conn, run_id, story.lead.category, story.score, summary, articles,
-                      embedding=embedding, duplicate_of=duplicate_of)
+                      embedding=embedding, duplicate_of=duplicate_of,
+                      source_count=len(story.publishers))
+        if duplicate_of:
+            db.increment_source_count(conn, duplicate_of, by=len(story.publishers))
         saved += 1
         dup_note = f" [duplicate of story {duplicate_of}, sim={similarity:.2f}]" if duplicate_of else ""
         log.info("Saved %d of %d (%s, page: %s)%s", n, len(stories), summary.source_mode, status, dup_note)

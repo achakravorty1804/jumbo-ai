@@ -31,6 +31,8 @@ def load_latest_briefing():
 
 def render_story(story):
     flags = []
+    if story.get("source_count", 1) > 1:
+        flags.append(f"✅ {story['source_count']} sources")
     if story.get("duplicate_of"):
         flags.append("🔄 update to earlier story")
     if story["source_mode"] != "article_text":
