@@ -86,16 +86,18 @@ def classify_batch(batch, system_prompt):
 def classify_all(articles, batch_size=BATCH_SIZE):
     system_prompt = PROMPT_FILE.read_text(encoding="utf-8")
     results, failures = [], 0
+    ai_unavailable = False
     for start in range(0, len(articles), batch_size):
         batch = articles[start:start + batch_size]
         if failures >= 2:  # the LLM is clearly unavailable; don't keep hammering it
             results += [Classified(a, "Unrated", 0, "skipped: LLM unavailable") for a in batch]
+            ai_unavailable = True
             continue
         rated = classify_batch(batch, system_prompt)
         results += rated
         failures = failures + 1 if all(c.score == 0 for c in rated) else 0
         log.info("Rated %d of %d", min(start + batch_size, len(articles)), len(articles))
-    return results
+    return results, ai_unavailable
 
 def save_results(results, path=CACHE_FILE):
     """Saves ratings to a local file (scratch/ is gitignored) so later steps can be tested for free."""
@@ -135,7 +137,9 @@ if __name__ == "__main__":
         step = max(1, len(kept) // n)
         kept = kept[::step][:n]  # a spread across all sources, not just the newest
     print(f"Rating {len(kept)} articles...\n")
-    results = classify_all(kept)
+    results, ai_unavailable = classify_all(kept)
+    if ai_unavailable:
+        print("NOTE: circuit breaker tripped — the LLM looked unavailable partway through\n")
     for c in sorted(results, key=lambda c: -c.score):
         print(f"{c.score} | {c.category:<17} | {c.article.source_name:<14} | {c.article.title[:85]} | {c.reason}")
     stories = merge_similar(results)

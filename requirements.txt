@@ -1,6 +1,7 @@
-   feedparser
-   requests
-   python-dotenv
-   trafilatura
-   streamlit
-   sentence-transformers
+feedparser
+requests
+python-dotenv
+trafilatura
+streamlit
+sentence-transformers
+pytest

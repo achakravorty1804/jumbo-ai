@@ -30,6 +30,9 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_BASE_URL: https://api.groq.com/openai/v1
           LLM_MODEL: openai/gpt-oss-120b
+          LLM_API_KEY_BACKUP: ${{ secrets.LLM_API_KEY_BACKUP }}
+          LLM_BASE_URL_BACKUP: ${{ secrets.LLM_BASE_URL_BACKUP }}
+          LLM_MODEL_BACKUP: ${{ secrets.LLM_MODEL_BACKUP }}
           RESPECT_PAYWALL_FLAG: ${{ secrets.RESPECT_PAYWALL_FLAG }}
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}

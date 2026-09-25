@@ -19,6 +19,15 @@ API_KEY = os.getenv("LLM_API_KEY", "")
 TPM_BUDGET = int(os.getenv("LLM_TPM_BUDGET", "7000"))
 REASONING_EFFORT = os.getenv("LLM_REASONING_EFFORT", "low" if "gpt-oss" in MODEL else "")
 
+# Backup provider, used only if the primary is fully exhausted (all retries failed).
+# Optional: if these aren't set in .env, Jumbo just runs on the primary as before.
+BACKUP_BASE_URL = os.getenv("LLM_BASE_URL_BACKUP", "")
+BACKUP_MODEL = os.getenv("LLM_MODEL_BACKUP", "")
+BACKUP_API_KEY = os.getenv("LLM_API_KEY_BACKUP", "")
+BACKUP_REASONING_EFFORT = os.getenv(
+    "LLM_REASONING_EFFORT_BACKUP", "low" if "gpt-oss" in BACKUP_MODEL else ""
+)
+
 usage_totals = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0}
 _recent = deque()  # (time, tokens) for calls made in the last minute
 
@@ -52,30 +61,32 @@ def _wait_seconds(response, attempt):
         return 2 ** (attempt + 1)
 
 
-def complete(messages, json_mode=False, temperature=0.2, max_tokens=2000, max_retries=3, timeout=90):
-    """Returns the model's reply text. Paces calls and retries rate limits and server errors."""
-    if not API_KEY:
-        raise LLMError("LLM_API_KEY is not set (check your .env file)")
+def _call(base_url, model, api_key, reasoning_effort, messages, json_mode, temperature,
+          max_tokens, max_retries, timeout, pace):
+    """One provider's retry loop. `pace` controls whether the shared TPM budget applies
+    (only meaningful for the primary provider, which the budget is calibrated for)."""
+    base_url = base_url.rstrip("/")  # avoid a double slash if .env has a trailing one
     payload = {
-        "model": MODEL,
+        "model": model,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
-    if REASONING_EFFORT:
-        payload["reasoning_effort"] = REASONING_EFFORT
-    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+    if reasoning_effort:
+        payload["reasoning_effort"] = reasoning_effort
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     needed = sum(len(m["content"]) for m in messages) // 3 + max_tokens  # conservative estimate
 
     last_error = None
     for attempt in range(max_retries + 1):
-        _pace(needed)
+        if pace:
+            _pace(needed)
         wait = 2 ** (attempt + 1)
         try:
             response = requests.post(
-                f"{BASE_URL}/chat/completions", json=payload, headers=headers, timeout=timeout
+                f"{base_url}/chat/completions", json=payload, headers=headers, timeout=timeout
             )
         except requests.RequestException as e:
             last_error = type(e).__name__
@@ -98,7 +109,8 @@ def complete(messages, json_mode=False, temperature=0.2, max_tokens=2000, max_re
                 except (KeyError, IndexError, ValueError) as e:
                     raise LLMError("Unexpected response format") from e
                 usage = data.get("usage") or {}
-                _recent.append((time.monotonic(), usage.get("total_tokens") or needed))
+                if pace:
+                    _recent.append((time.monotonic(), usage.get("total_tokens") or needed))
                 usage_totals["calls"] += 1
                 usage_totals["prompt_tokens"] += usage.get("prompt_tokens", 0)
                 usage_totals["completion_tokens"] += usage.get("completion_tokens", 0)
@@ -109,6 +121,31 @@ def complete(messages, json_mode=False, temperature=0.2, max_tokens=2000, max_re
             log.warning("LLM call failed (%s), retrying in %.0fs", last_error, wait)
             time.sleep(wait)
     raise LLMError(f"Failed after {max_retries + 1} attempts: {last_error}")
+
+def complete(messages, json_mode=False, temperature=0.2, max_tokens=2000, max_retries=3, timeout=90):
+    """Returns the model's reply text. Tries the primary provider first (paced, retried).
+    If the primary is fully exhausted and a backup provider is configured in .env,
+    falls back to it once before giving up."""
+    if not API_KEY:
+        raise LLMError("LLM_API_KEY is not set (check your .env file)")
+    try:
+        return _call(
+            BASE_URL, MODEL, API_KEY, REASONING_EFFORT,
+            messages, json_mode, temperature, max_tokens, max_retries, timeout, pace=True,
+        )
+    except LLMError as primary_error:
+        if not (BACKUP_BASE_URL and BACKUP_MODEL and BACKUP_API_KEY):
+            raise
+        log.warning("Primary LLM failed (%s); trying backup provider", primary_error)
+        try:
+            return _call(
+                BACKUP_BASE_URL, BACKUP_MODEL, BACKUP_API_KEY, BACKUP_REASONING_EFFORT,
+                messages, json_mode, temperature, max_tokens, max_retries, timeout, pace=False,
+            )
+        except LLMError as backup_error:
+            raise LLMError(
+                f"Primary failed ({primary_error}); backup also failed ({backup_error})"
+            ) from backup_error
 
 
 if __name__ == "__main__":

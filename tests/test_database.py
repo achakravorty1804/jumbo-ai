@@ -49,6 +49,23 @@ class DatabaseTests(unittest.TestCase):
         row = self.conn.execute("SELECT prompt_tokens, completion_tokens FROM runs").fetchone()
         self.assertEqual((row[0], row[1]), (150, 25))
 
+    def test_increment_source_count(self):
+        story_id = db.add_story(self.conn, self.run_id, "Business", 4, SUMMARY, [make_article(1)])
+        db.increment_source_count(self.conn, story_id, by=3)
+        stories = db.list_stories(self.conn, "2026-09-22")
+        self.assertEqual(stories[0]["source_count"], 4)  # default 1, +3
+
+    def test_fresh_db_has_articles_table(self):
+        """Session 8 found the articles table missing from SCHEMA entirely; it only
+        worked because an existing DB file masked the gap via IF NOT EXISTS. A
+        brand-new in-memory DB is exactly what would have caught this."""
+        tables = {row["name"] for row in self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )}
+        self.assertIn("articles", tables)
+        self.assertIn("stories", tables)
+        self.assertIn("runs", tables)
+
 
 if __name__ == "__main__":
     unittest.main()
