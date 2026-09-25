@@ -8,6 +8,7 @@ import logging
 import sys
 from contextlib import closing
 from datetime import datetime
+from urllib.parse import urlencode
 
 from agent import llm
 from agent.merge import merge_similar, select_top_stories
@@ -60,8 +61,9 @@ def build_briefing():
         mode = "ai_unavailable" if ai_unavailable else "full"
         return run_id, saved + skipped, mode
 
+
 def send_daily_email(story_count: int, mode: str = "full"):
-    """Send the short Jumbo daily email."""
+    """Send the short Jumbo daily email to every registered user."""
 
     dashboard_url = "https://jumbo-ai-dpdqoyag5ko7krhwt7vrml.streamlit.app/"
 
@@ -75,7 +77,17 @@ def send_daily_email(story_count: int, mode: str = "full"):
     else:
         note = ""
 
-    body = f"""🐘 Hey Akash!
+    with closing(db.connect()) as conn:
+        users = db.list_users(conn)
+
+    for user in users:
+        name = user["name"]
+        email = user["email"]
+        slug = user["slug"]
+
+        personalized_url = f"{dashboard_url}?{urlencode({'user': slug})}"
+
+        body = f"""🐘 Hey {name}!
 
 I'm Jumbo, your personal AI news assistant.
 
@@ -84,17 +96,18 @@ I've been keeping track of what's happening around the world and your daily inte
 Today's briefing contains {story_count} stories.
 {note}
 OPEN JUMBO:
-{dashboard_url}
+{personalized_url}
 
 — Jumbo
 """
 
-    send_email(
-        subject=subject,
-        body=body,
-    )
+        send_email(
+            subject=subject,
+            body=body,
+            recipient=email,
+        )
 
-    log.info("Daily email sent successfully")
+        log.info("Daily email sent successfully to %s", email)
 
 
 def send_failure_email():

@@ -52,6 +52,15 @@ CREATE TABLE IF NOT EXISTS chat_log (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_chat_log_conv ON chat_log(conversation_id);
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    slug TEXT NOT NULL UNIQUE,        -- identifies the user in their email link, e.g. ?user=tapas
+    has_seen_intro INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_users_slug ON users(slug);
 """
 
 
@@ -199,4 +208,31 @@ def list_conversations(conn):
         ORDER BY last_active DESC
         """
     ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def add_user(conn, name, email, slug):
+    """Adds a new person who can access Jumbo. Raises sqlite3.IntegrityError if email or slug already exist."""
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO users (name, email, slug, has_seen_intro, created_at) VALUES (?,?,?,0,?)",
+            (name, email, slug, _now()),
+        )
+    return cur.lastrowid
+
+
+def get_user_by_slug(conn, slug):
+    """Returns the user dict for this slug, or None if no such user exists."""
+    row = conn.execute("SELECT * FROM users WHERE slug = ?", (slug,)).fetchone()
+    return dict(row) if row else None
+
+
+def mark_intro_seen(conn, user_id):
+    with conn:
+        conn.execute("UPDATE users SET has_seen_intro = 1 WHERE id = ?", (user_id,))
+
+
+def list_users(conn):
+    """All users, ordered by name. Used when sending the daily email to everyone."""
+    rows = conn.execute("SELECT * FROM users ORDER BY name").fetchall()
     return [dict(row) for row in rows]
