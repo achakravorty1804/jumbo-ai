@@ -42,6 +42,8 @@ MASCOT_FILES = {
     "dejected": "jumbo_dejected.mp4",
     "clapping": "jumbo_clapping.mp4",
     "showing": "jumbo_showing.mp4",
+    "news": "jumbo_news.mp4",
+    "namaste": "jumbo_namaste.mp4",
 }
 
 COLOR_BUBBLE_BG = "#FFFFFF"

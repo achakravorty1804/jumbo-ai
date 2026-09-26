@@ -6,10 +6,20 @@ from contextlib import closing
 from datetime import date
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from memory import database as db
 from mascot import show_mascot, COLOR_BUBBLE_BG, COLOR_BUBBLE_BORDER, COLOR_TEXT
-from theme import apply_theme, render_sidebar_brand, top_banner, PINK_SOFT, PINK_BORDER, NAVY
+from theme import (
+    apply_theme,
+    render_sidebar_brand,
+    top_banner,
+    render_fact_bubble,
+    confirm_exit_dialog,
+    PINK_SOFT,
+    PINK_BORDER,
+    NAVY,
+)
 
 CATEGORY_ORDER = [
     "India & Economy", "Business", "AI", "Startups",
@@ -117,24 +127,18 @@ def items_for(category, by_category, leftover):
     else:
         items = by_category.get(category, [])
 
-    # Defensive filter: skip any story with a missing/blank headline
-    # (e.g. from a failed/partial LLM generation) so it doesn't show
-    # up as an empty tile in the grid.
     return [s for s in items if s.get("headline") and s["headline"].strip()]
 
 
 def render_message_bubble(message):
-    """A small pink-bordered speech-bubble box for page content
-    (used next to Jumbo in category_view), independent of the
-    mascot component's own bubble."""
     st.markdown(
         f"""
         <div style="
             background: {COLOR_BUBBLE_BG};
             border: 2px solid {COLOR_BUBBLE_BORDER};
             border-radius: 18px;
-            padding: 14px 20px;
-            margin-bottom: 18px;
+            padding: 8px 14px;
+            margin-bottom: 6px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.06);
             display: inline-block;
             max-width: 100%;
@@ -142,7 +146,7 @@ def render_message_bubble(message):
             <p style="
                 margin: 0;
                 color: {COLOR_TEXT};
-                font-size: 16px;
+                font-size: 13px;
                 line-height: 1.45;
             ">{message}</p>
         </div>
@@ -150,46 +154,29 @@ def render_message_bubble(message):
         unsafe_allow_html=True,
     )
 
-
 def _select_story(story):
-    """on_click callback: change state to open this story's detail
-    page. Using on_click (rather than checking the button's return
-    value and calling st.rerun() ourselves afterward) is the more
-    reliable pattern for state changes triggered by a button inside
-    a loop."""
     st.session_state.stage = "story_detail"
     st.session_state.selected_story = story
 
 
 def render_story_card(story, key_prefix, index):
-    """One story as a small, wide, pink clickable tile showing only
-    the headline. Clicking it opens Jumbo's own in-app detail page
-    for that story (does NOT redirect to the external article)."""
-    st.button(
-        story["headline"],
-        key=f"{key_prefix}_{index}",
-        use_container_width=True,
-        on_click=_select_story,
-        args=(story,),
-    )
-
+    with st.container(key=f"tile_wrap_{key_prefix}_{index}"):
+        st.button(
+            story["headline"],
+            key=f"{key_prefix}_{index}",
+            use_container_width=True,
+            on_click=_select_story,
+            args=(story,),
+        )
 
 def render_story_grid(items, key_prefix, cols_per_row=3):
     ordered = sorted(items, key=lambda s: -s["score"])
 
-    for row_start in range(0, len(ordered), cols_per_row):
-        row_items = ordered[row_start:row_start + cols_per_row]
-        cols = st.columns(cols_per_row)
-
-        for col, story in zip(cols, row_items):
-            with col:
-                render_story_card(story, key_prefix, row_start + row_items.index(story))
-
+    with st.container(key="story_tile_stack"):
+        for i, story in enumerate(ordered):
+            render_story_card(story, key_prefix, i)
 
 def render_story_detail(story, category):
-    """Jumbo-branded full detail page for a single story: headline,
-    flags, summary, why it matters, source/date, and the ONLY link
-    to the external article, at the bottom."""
     flags = []
 
     if story.get("source_count", 1) > 1:
@@ -211,10 +198,10 @@ def render_story_detail(story, category):
     mcol, ccol = st.columns([1, 3])
 
     with mcol:
-        show_mascot("thinking", show_bubble=False, size=260, circular=False)
-
+        st.markdown("<div style='height:60px'></div>", unsafe_allow_html=True)
+        show_mascot("news", show_bubble=False, size=275, circular=False)
     with ccol:
-        if st.button(f"⬅ Back to {category}"):
+        if st.button(f"⬅ Back to {category}", key="back_to_category"):
             st.session_state.stage = "category_view"
             st.rerun()
 
@@ -228,16 +215,153 @@ def render_story_detail(story, category):
         st.caption(f"{publishers} · {when} IST")
         st.markdown(f"[🔗 Read the full article →]({lead['url']})")
 
+def render_about_us(user):
+    st.markdown(
+        """
+        <div style="text-align:center; margin-bottom:4px;">
+        <div style="font-size:11px; ...">MEET YOUR NEWS COMPANION</div>
+        <h1 style="font-size:26px; font-weight:800; margin:0;">About Jumbo 🐘</h1>
+        <p style="font-size:13px; color:#777; margin-top:2px;">
+                A smarter, simpler way to stay informed.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
+    mcol, ccol = st.columns([1, 3])
+
+    with mcol:
+        show_mascot("namaste", show_bubble=False, size=280, circular=False)
+        render_message_bubble("Hi "+user["name"]+"! I am Jumbo - here is everything you need to know about me.")
+
+    with ccol:
+        tab1, tab2, tab3, tab4 = st.tabs(
+            ["📰  The Problem", "💡  Why I Was Built", "⚡  What I Can Do", "🛡️  What I Can't Do Yet"]
+        )
+
+        with tab1:
+            st.markdown(
+                """
+                <div class="jumbo-info-card">
+                    <div class="jumbo-card-title">The news shouldn't feel like homework. 📚</div>
+                    <div class="jumbo-item">📰 <b>Old-school news</b><br><span>Newspapers were part of the morning — but who really has time for that anymore?</span></div>
+                    <div class="jumbo-item">📱 <b>Too much noise</b><br><span>We're on our phones all day, yet somehow important news still slips right past us.</span></div>
+                    <div class="jumbo-item">🗞️ <b>Information overload</b><br><span>Ads, pop-ups and clutter can make even one article exhausting to read.</span></div>
+                    <div class="jumbo-item">🤳 <b>Social media isn't enough</b><br><span>It's fast and convenient, but important stories can be difficult to verify.</span></div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with tab2:
+            st.markdown(
+                """
+                <div class="jumbo-info-card">
+                    <div class="jumbo-card-title">That's exactly why I exist. 💙</div>
+                    <p class="jumbo-big-text">I'm <b>Jumbo</b> — your personalized digital AI news agent.</p>
+                    <p>Every morning, I mail you a clean digest of yesterday's most important stories.</p>
+                    <div class="jumbo-highlight">✨ No clutter &nbsp;•&nbsp; 🚫 No ads &nbsp;•&nbsp; 🧠 No doomscrolling</div>
+                    <p>Just what actually matters, ready when you wake up.</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with tab3:
+            st.markdown(
+                """
+                <div class="jumbo-info-card">
+                    <div class="jumbo-card-title">Here's what I can do for you. ⚡</div>
+                    <div class="jumbo-grid">
+                        <div>📧<b>Daily Digest</b><small>Morning stories delivered to you</small></div>
+                        <div>🗂️<b>Many Domains</b><small>AI, startups, India, global & more</small></div>
+                        <div>🔍<b>Source Checking</b><small>Multiple sources for significance</small></div>
+                        <div>🇮🇳<b>India Lens</b><small>Understand the local impact</small></div>
+                        <div>💬<b>Ask Jumbo</b><small>Ask about today's news anytime</small></div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with tab4:
+            st.markdown(
+                """
+                <div class="jumbo-info-card">
+                    <div class="jumbo-card-title">A few things I won't pretend to do. 🛡️</div>
+                    <div class="jumbo-item">🎯 <b>No clickbait</b><br><span>If it's not significant, I skip it.</span></div>
+                    <div class="jumbo-item">🔮 <b>No future predictions</b><br><span>I report what's happened rather than pretending to know what's next.</span></div>
+                    <div class="jumbo-item">📰 <b>Not a replacement for journalism</b><br><span>Think of me as your shortcut to the news worth knowing.</span></div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+
+def render_contact_info():
+    st.markdown(
+        """
+        <div style="text-align:center; margin-bottom:18px;">
+            <div style="font-size:13px; letter-spacing:3px; font-weight:800; color:#E85D9E;">LET'S CONNECT</div>
+            <h1 style="font-size:40px; font-weight:800; margin:4px 0;">Contact Jumbo 💌</h1>
+            <p style="font-size:16px; color:#777; margin-top:4px;">
+                Questions, ideas, feedback — I'd love to hear from you.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    mcol, ccol = st.columns([1, 3])
+
+    with mcol:
+        show_mascot("showing", show_bubble=False, size=280, circular=False)
+
+    with ccol:
+        st.markdown(
+            """
+            <div class="contact-card">
+                <div class="contact-title">📬 Get in touch</div>
+                <p class="contact-subtitle">Whether you have a suggestion or simply want to say hello, here's where you can find me.</p>
+                <div class="contact-row">
+                    <div class="contact-icon">👤</div>
+                    <div><small>NAME</small><strong>Akash Chakravorty</strong></div>
+                </div>
+                <div class="contact-row">
+                    <div class="contact-icon">✉️</div>
+                    <div><small>EMAIL</small><strong>achakravorty1804@gmail.com</strong></div>
+                </div>
+                <div class="contact-row">
+                    <div class="contact-icon">📱</div>
+                    <div><small>PHONE</small><strong>+91 8617738746</strong></div>
+                </div>
+                <div class="contact-row">
+                    <div class="contact-icon">🔗</div>
+                    <div><small>LINKEDIN</small>
+                        <a href="https://www.linkedin.com/in/akash-chakravorty-a681212ab/" target="_blank">akash-chakravorty-a681212ab ↗</a>
+                    </div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 def category_button(category, by_category, leftover, key_prefix):
+    """One category tile, wrapped in a keyed container so theme.py's
+    CSS (targeting the "st-key-ring_..." class) can style ONLY these
+    picker buttons — bigger, bolder, decorated — without touching
+    Exit, Ask Jumbo, or the story-card buttons elsewhere in the app."""
     items = items_for(category, by_category, leftover)
     emoji = CATEGORY_EMOJI.get(category, "📰")
 
-    clicked = st.button(
-        f"{emoji}\n{category}\n{len(items)} stories",
-        use_container_width=True,
-        key=f"{key_prefix}_{category}",
-    )
+    safe_key = f"ring_{key_prefix}_{category}".replace(" ", "_").replace("&", "and")
+
+    with st.container(key=safe_key):
+        clicked = st.button(
+            f"{emoji}\n{category}\n{len(items)} stories",
+            use_container_width=True,
+            key=f"{key_prefix}_{category}",
+        )
 
     if clicked:
         st.session_state.stage = "thumbsup"
@@ -246,48 +370,35 @@ def category_button(category, by_category, leftover, key_prefix):
 
 
 def render_picker_ring(cats, by_category, leftover, user):
-    """Jumbo centered, categories arranged top / sides / bottom."""
-    top_row = cats[0:3]
-    side_left = cats[3:4]
-    side_right = cats[4:5]
-    bottom_row = cats[5:8]
-    extra = cats[8:]
+    points = {"top": [], "left": [], "right": []}
+    point_order = ["top", "left", "right", "left", "right"]
 
-    if top_row:
-        cols = st.columns(len(top_row))
-        for col, cat in zip(cols, top_row):
-            with col:
+    for i, cat in enumerate(cats):
+        points[point_order[i % 5]].append(cat)
+
+    if points["top"]:
+        _, mid, _ = st.columns([1, 2, 1])
+        with mid:
+            for cat in points["top"]:
                 category_button(cat, by_category, leftover, "ring")
 
-    mid_cols = st.columns([1, 2, 1])
+    left_col, center_col, right_col = st.columns([1, 2, 1])
 
-    with mid_cols[0]:
-        for cat in side_left:
+    with left_col:
+        for cat in points["left"]:
             category_button(cat, by_category, leftover, "ring")
 
-    with mid_cols[1]:
+    with center_col:
         show_mascot(
             "wave",
             f"Hi {user['name']}! What news would you like to view today?",
-            size=200,
+            size=275,
             circular=False,
         )
 
-    with mid_cols[2]:
-        for cat in side_right:
+    with right_col:
+        for cat in points["right"]:
             category_button(cat, by_category, leftover, "ring")
-
-    if bottom_row:
-        cols = st.columns(len(bottom_row))
-        for col, cat in zip(cols, bottom_row):
-            with col:
-                category_button(cat, by_category, leftover, "ring")
-
-    if extra:
-        cols = st.columns(len(extra))
-        for col, cat in zip(cols, extra):
-            with col:
-                category_button(cat, by_category, leftover, "ring")
 
 
 def main():
@@ -305,9 +416,15 @@ def main():
     if "selected_story" not in st.session_state:
         st.session_state.selected_story = None
 
-    top_banner(get_daily_fact())
+    if "want_exit_confirm" not in st.session_state:
+        st.session_state.want_exit_confirm = False
 
-    if not user.get("has_seen_intro", 0) and st.session_state.stage is None:
+    if st.session_state.want_exit_confirm:
+        confirm_exit_dialog()
+
+    top_banner()
+
+    if st.session_state.stage is None:
         st.session_state.stage = "intro"
 
     if st.session_state.stage is None:
@@ -315,21 +432,24 @@ def main():
 
     stage = st.session_state.stage
 
+    # "Did you know?" only ever shows on the home picker page — not
+    # on intro, thumbsup, category_view, story_detail, clapping, or
+    # goodbye.
+    if stage == "picker":
+        render_fact_bubble(get_daily_fact())
+
     if stage == "intro":
         show_mascot(
-            "wave",
-            f"Hi {user['name']}! Did you know? {get_daily_fact()}",
+            "namaste",
+            f"Welcome back {user['name']}! I am Jumbo, your digital AI news "
+            f"assistant, and I'll keep you updated with what's going on in "
+            f"the world.",
             circular=False,
+            size=300,
         )
-
-        if st.button("Got it — let's go!", type="primary"):
-            if user.get("id") is not None:
-                with closing(db.connect()) as conn:
-                    db.mark_intro_seen(conn, user["id"])
-
-            st.session_state.stage = "picker"
-            st.rerun()
-
+        time.sleep(3)
+        st.session_state.stage = "picker"
+        st.rerun()
         return
 
     if stage == "goodbye":
@@ -337,10 +457,22 @@ def main():
             "wave",
             f"Goodbye {user['name']}!! Hope to see you again tomorrow.",
             circular=False,
+            size=300,
         )
         time.sleep(3)
         st.markdown("### 👋 You're all set — you can close this tab now.")
+
+        components.html("<script>window.close();</script>", height=0)
+
         st.stop()
+        return
+
+    if stage == "about_us":
+        render_about_us(user)
+        return
+
+    if stage == "contact_info":
+        render_contact_info()
         return
 
     run_date, stories = load_latest_briefing()
@@ -360,7 +492,7 @@ def main():
         return
 
     if stage == "thumbsup":
-        show_mascot("thumbsup", "Wow, great choice!", circular=False)
+        show_mascot("thumbsup", "Wow, great choice!", circular=False, size=420)
         time.sleep(3)
         st.session_state.stage = "category_view"
         st.rerun()
@@ -374,14 +506,14 @@ def main():
         mcol, ccol = st.columns([1, 3])
 
         with mcol:
-            show_mascot("showing", show_bubble=False, size=260, circular=False)
-
-        with ccol:
+            st.markdown("<div style='height:60px'></div>", unsafe_allow_html=True)
+            show_mascot("showing", show_bubble=False, size=320, circular=False)
             render_message_bubble(
                 f"Here's all you need to know about {category} news."
             )
 
-            if st.button("⬅ Exit"):
+        with ccol:
+            if st.button("Back to Home", key="back_to_home"):
                 st.session_state.stage = "clapping"
                 st.rerun()
 
@@ -410,6 +542,7 @@ def main():
             "clapping",
             f"Congrats on reading the {category} news!",
             circular=False,
+            size=420,
         )
         time.sleep(3)
         st.session_state.stage = "picker"

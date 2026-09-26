@@ -99,6 +99,10 @@ def _migrate(conn):
     if "source_count" not in cols:
         conn.execute("ALTER TABLE stories ADD COLUMN source_count INTEGER NOT NULL DEFAULT 1")
 
+    chat_cols = {row["name"] for row in conn.execute("PRAGMA table_info(chat_log)")}
+    if "user_slug" not in chat_cols:
+        conn.execute("ALTER TABLE chat_log ADD COLUMN user_slug TEXT")
+
     conn.commit()
 
 def get_or_create_run(conn, run_date):
@@ -181,11 +185,11 @@ def list_stories(conn, run_date):
         stories.append(story)
     return stories
 
-def add_chat_message(conn, conversation_id, role, content):
+def add_chat_message(conn, conversation_id, role, content, user_slug):
     with conn:
         conn.execute(
-            "INSERT INTO chat_log (conversation_id, role, content, created_at) VALUES (?,?,?,?)",
-            (conversation_id, role, content, _now()),
+            "INSERT INTO chat_log (conversation_id, role, content, created_at, user_slug) VALUES (?,?,?,?,?)",
+            (conversation_id, role, content, _now(), user_slug),
         )
 
 
@@ -196,17 +200,19 @@ def get_chat_history(conn, conversation_id):
     return [(row["role"], row["content"]) for row in rows]
 
 
-def list_conversations(conn):
-    """One row per conversation: its id, a title (first user message), and last activity time."""
+def list_conversations(conn, user_slug):
+    """One row per conversation FOR THIS USER: its id, a title (first user message), and last activity time."""
     rows = conn.execute(
         """
         SELECT conversation_id,
                MIN(CASE WHEN role = 'user' THEN content END) AS title,
                MAX(created_at) AS last_active
         FROM chat_log
+        WHERE user_slug = ?
         GROUP BY conversation_id
         ORDER BY last_active DESC
-        """
+        """,
+        (user_slug,),
     ).fetchall()
     return [dict(row) for row in rows]
 
