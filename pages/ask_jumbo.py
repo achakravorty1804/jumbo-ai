@@ -210,14 +210,16 @@ if "active_conversation" not in st.session_state:
     st.session_state.active_conversation = str(uuid.uuid4())
     st.session_state.chat_history = []
 
+chat_container = st.container(height=500)
+
 for role, text in st.session_state.chat_history:
     label = user["name"] if role == "user" else "Jumbo"
-    st.chat_message(role).write(f"**{label}**\n\n{text}")
+    chat_container.chat_message(role).write(f"**{label}**\n\n{text}")
 
 question = st.chat_input("Ask Jumbo about recent news...")
 if question:
     conv_id = st.session_state.active_conversation
-    st.chat_message("user").write(f"**{user['name']}**\n\n{question}")
+    chat_container.chat_message("user").write(f"**{user['name']}**\n\n{question}")
     st.session_state.chat_history.append(("user", question))
     if conn:
             add_chat_message(conn, conv_id, "user", question, user["slug"])
@@ -235,7 +237,7 @@ if question:
         except LLMError as e:
             answer = f"⚠️ Jumbo couldn't reach the brain right now ({e})."
 
-    st.chat_message("assistant").write(f"**Jumbo**\n\n{answer}")
+    chat_container.chat_message("assistant").write(f"**Jumbo**\n\n{answer}")
     st.session_state.chat_history.append(("assistant", answer))
     if conn:
             add_chat_message(conn, conv_id, "assistant", answer, user["slug"])
