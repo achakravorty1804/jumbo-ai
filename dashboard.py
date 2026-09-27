@@ -84,6 +84,7 @@ def get_current_user():
         user = db.get_user_by_slug(conn, slug)
 
         if user:
+            st.query_params["user"] = slug
             return dict(user)
 
     st.warning("🐘 We couldn't recognize that link. Please check it and try again.")
