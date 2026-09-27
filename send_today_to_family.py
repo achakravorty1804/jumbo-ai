@@ -6,7 +6,7 @@ from memory import database as db
 from mailer.sender import send_email
 
 dashboard_url = "https://jumbo-ai-dpdqoyag5ko7krhwt7vrml.streamlit.app/"
-TARGET_SLUGS = {"tapas", "debjani", "akash", "babu"}
+TARGET_SLUGS = {"tapas", "debjani", "akash", "babu", "adrija2"}
 
 with closing(db.connect()) as conn:
     row = conn.execute(
