@@ -46,11 +46,19 @@ def fetch_source(source):
     return [], error
 
 
-def fetch_all(hours=24, now=None):
-    """Returns (articles, report). Articles are unique by URL, newest first."""
+def fetch_all(now=None):
+    """Returns (articles, report). Articles are unique by URL, newest first.
+
+    Window is a fixed calendar day in IST: all of "yesterday" relative to
+    `now` (00:00:00 IST to 23:59:59 IST), regardless of what time the job
+    actually runs. This keeps the window stable even if the cron fires a
+    little early/late, instead of a rolling "last 24 hours" that shifts
+    and clips articles from early yesterday morning.
+    """
     now = now or datetime.now(IST)
-    cutoff = now - timedelta(hours=hours)
-    latest_allowed = now + timedelta(minutes=10)  # tolerate small clock differences
+    today_start = datetime.combine(now.date(), datetime.min.time(), tzinfo=IST)
+    cutoff = today_start - timedelta(days=1)       # yesterday 00:00 IST
+    latest_allowed = today_start                   # today 00:00 IST (exclusive upper bound)
     seen_urls = set()
     fresh = []
     report = {}
