@@ -149,7 +149,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-MAX_CONTEXT_CHARS = 6000
+MAX_CONTEXT_CHARS = 12000
 
 try:
     conn = connect()
@@ -162,7 +162,7 @@ except Exception as e:
     conn = None
 
 def get_current_user():
-    slug = st.query_params.get("user") or "akash"
+    slug = st.query_params.get("user") or st.session_state.get("user_slug", "akash")
     if conn:
         user = get_user_by_slug(conn, slug)
         if user:
@@ -178,9 +178,12 @@ if not rows:
     st.info("🐘 Jumbo doesn't have any stories in memory yet. Run a briefing first, then come back!")
     st.stop()
 
+SUMMARY_CHAR_CAP = 300
+
 context = ""
 for h, s, c in rows:
-    line = f"- {h} ({c}): {s}\n"
+    s_short = s if len(s) <= SUMMARY_CHAR_CAP else s[:SUMMARY_CHAR_CAP].rsplit(" ", 1)[0] + "..."
+    line = f"- {h} ({c}): {s_short}\n"
     if len(context) + len(line) > MAX_CONTEXT_CHARS:
         break
     context += line

@@ -117,6 +117,8 @@ CUSTOM_CSS = f"""
     padding-right: 2rem !important;
     padding-bottom: 0.5rem !important;
     max-width: 100% !important;
+    position: relative;
+    min-height: 100vh;
 }}
 
 [data-testid="stVerticalBlock"] {{
@@ -173,12 +175,13 @@ div[class*="st-key-ring_"] button:hover {{
 }}
 
 .st-key-fact_bubble_container {{
-    position: fixed;
+    position: absolute;
     bottom: 18px;
-    right: 18px;
+    left: 18px;
     max-width: 250px;
     z-index: 9999;
 }}
+
 .st-key-fact_bubble_container div[data-testid="stButton"] > button {{
     background: transparent !important;
     border: none !important;

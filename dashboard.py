@@ -72,13 +72,13 @@ def load_latest_briefing():
 
         return row["run_date"], db.list_stories(conn, row["run_date"])
 
-
 def get_current_user():
     slug = st.query_params.get("user")
 
     if not slug:
-        slug = "akash"
+        slug = st.session_state.get("user_slug", "akash")
 
+    st.session_state["user_slug"] = slug
     with closing(db.connect()) as conn:
         user = db.get_user_by_slug(conn, slug)
 
