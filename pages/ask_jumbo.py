@@ -162,15 +162,20 @@ except Exception as e:
     conn = None
 
 def get_current_user():
-    slug = st.query_params.get("user") or st.session_state.get("user_slug", "akash")
+    slug = st.query_params.get("user") or st.session_state.get("user_slug")
+
+    if not slug:
+        st.warning("🐘 Please open your personal Jumbo link to continue.")
+        st.stop()
+
     if conn:
         user = get_user_by_slug(conn, slug)
         if user:
+            st.query_params["user"] = slug
             return dict(user)
-        owner = get_user_by_slug(conn, "akash")
-        if owner:
-            return dict(owner)
-    return {"id": None, "name": "Akash", "slug": "akash", "has_seen_intro": 0}
+
+    st.warning("🐘 We couldn't recognize that link. Please check it and try again.")
+    st.stop()
 
 user = get_current_user()
 

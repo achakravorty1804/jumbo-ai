@@ -73,10 +73,11 @@ def load_latest_briefing():
         return row["run_date"], db.list_stories(conn, row["run_date"])
 
 def get_current_user():
-    slug = st.query_params.get("user")
+    slug = st.query_params.get("user") or st.session_state.get("user_slug")
 
     if not slug:
-        slug = st.session_state.get("user_slug", "akash")
+        st.warning("🐘 Please open your personal Jumbo link to continue.")
+        st.stop()
 
     st.session_state["user_slug"] = slug
     with closing(db.connect()) as conn:
@@ -85,18 +86,8 @@ def get_current_user():
         if user:
             return dict(user)
 
-        owner = db.get_user_by_slug(conn, "akash")
-
-        if owner:
-            return dict(owner)
-
-    return {
-        "id": None,
-        "name": "Akash",
-        "slug": "akash",
-        "has_seen_intro": 0,
-    }
-
+    st.warning("🐘 We couldn't recognize that link. Please check it and try again.")
+    st.stop()
 
 def group_by_category(stories):
     by_category = {}
